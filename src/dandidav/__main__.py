@@ -543,7 +543,7 @@ class ZarrResource(ZarrFolder):
         return self.asset.modified.timestamp()
 
 
-if __name__ == "__main__":
+def main() -> None:
     config = {
         "host": "127.0.0.1",
         "port": 8080,
@@ -568,3 +568,7 @@ if __name__ == "__main__":
         print("Received Ctrl-C: stopping...")
     finally:
         server.stop()
+
+
+if __name__ == "__main__":
+    main()

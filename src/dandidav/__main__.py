@@ -5,7 +5,7 @@ from datetime import datetime
 import io
 from operator import attrgetter
 import re
-from typing import IO
+from typing import IO, TYPE_CHECKING
 from urllib.parse import quote
 import boto3
 from botocore import UNSIGNED
@@ -26,8 +26,11 @@ from wsgidav.dav_provider import DAVCollection, DAVNonCollection, DAVProvider
 from wsgidav.util import join_uri
 from wsgidav.wsgidav_app import WsgiDAVApp
 
+if TYPE_CHECKING:
+    from mypy_boto3_s3.client import S3Client
+
 INSTANCE = "dandi"
-TOKEN = None
+TOKEN: str | None = None
 BUCKET = "dandiarchive"
 
 # If a client makes a request for a path with one of these names, assume it
@@ -40,7 +43,9 @@ class DandiProvider(DAVProvider):
         super().__init__()
         self.client = DandiAPIClient.for_dandi_instance(INSTANCE, token=TOKEN)
 
-    def get_resource_inst(self, path: str, environ: dict) -> RootCollection:
+    def get_resource_inst(
+        self, path: str, environ: dict
+    ) -> DAVCollection | DAVNonCollection:
         return RootCollection("/", environ).resolve("/", path)
 
     def is_readonly(self) -> bool:
@@ -108,7 +113,7 @@ class DandisetResource(DAVCollection):
             names.append("releases")
         return names
 
-    def get_member(self, name: str) -> VersionResource | ReleasesCollection:
+    def get_member(self, name: str) -> VersionResource | ReleasesCollection | None:
         if name == "draft":
             d = self.dandiset.for_version(self.dandiset.draft_version)
             return VersionResource(join_uri(self.path, name), self.environ, d)
@@ -133,10 +138,14 @@ class DandisetResource(DAVCollection):
         return False
 
     def get_creation_date(self) -> float:
-        return self.dandiset.created.timestamp()
+        dt = self.dandiset.created
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
     def get_last_modified(self) -> float:
-        return self.dandiset.modified.timestamp()
+        dt = self.dandiset.modified
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
 
 class ReleasesCollection(DAVCollection):
@@ -277,19 +286,24 @@ class BlobResource(DAVNonCollection):
         self.asset = asset
 
     def get_content(self) -> IO[bytes]:
-        return self.asset.as_readable().open()
+        return self.asset.as_readable().open()  # type: ignore[no-any-return]
 
     def support_ranges(self) -> bool:
         return True
 
     def get_content_length(self) -> int:
-        return self.asset.size
+        s = self.asset.size
+        assert isinstance(s, int)
+        return s
 
     def get_content_type(self) -> str:
         try:
-            return self.asset.get_raw_metadata()["encodingFormat"]
+            ct = self.asset.get_raw_metadata()["encodingFormat"]
         except KeyError:
             return "application/octet-stream"
+        else:
+            assert isinstance(ct, str)
+            return ct
 
     def get_display_info(self) -> dict:
         return {"type": "Blob asset"}
@@ -300,18 +314,25 @@ class BlobResource(DAVNonCollection):
 
     def get_etag(self) -> str | None:
         try:
-            return self.asset.get_raw_digest()
+            dg = self.asset.get_raw_digest()
         except NotFoundError:
             return None
+        else:
+            assert dg is None or isinstance(dg, str)
+            return dg
 
     def support_etag(self) -> bool:
         return True
 
     def get_creation_date(self) -> float:
-        return self.asset.created.timestamp()
+        dt = self.asset.created
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
     def get_last_modified(self) -> float:
-        return self.asset.modified.timestamp()
+        dt = self.asset.modified
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
 
 class VersionResource(AssetFolder):
@@ -359,10 +380,14 @@ class VersionResource(AssetFolder):
         return False
 
     def get_creation_date(self) -> float:
-        return self.dandiset.version.created.timestamp()
+        dt = self.dandiset.version.created
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
     def get_last_modified(self) -> float:
-        return self.dandiset.version.modified.timestamp()
+        dt = self.dandiset.version.modified
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
 
 class DandisetYaml(DAVNonCollection):
@@ -402,7 +427,9 @@ class DandisetYaml(DAVNonCollection):
 
 
 class ZarrFolder(DAVCollection):
-    def __init__(self, path: str, environ: dict, s3client, prefix: str) -> None:
+    def __init__(
+        self, path: str, environ: dict, s3client: S3Client, prefix: str
+    ) -> None:
         super().__init__(path, environ)
         self.s3client = s3client
         self.prefix = prefix
@@ -448,8 +475,8 @@ class ZarrFolder(DAVCollection):
                     return ZarrEntryResource(
                         join_uri(self.path, name), self.environ, data
                     )
-            for n in page.get("CommonPrefixes", []):
-                if n["Prefix"] == prefix + "/":
+            for prefx in page.get("CommonPrefixes", []):
+                if prefx["Prefix"] == prefix + "/":
                     return ZarrFolder(
                         join_uri(self.path, name),
                         self.environ,
@@ -466,8 +493,8 @@ class ZarrFolder(DAVCollection):
         for page in self.s3client.get_paginator("list_objects_v2").paginate(
             Bucket=BUCKET, Prefix=self.prefix, Delimiter="/"
         ):
-            for n in page.get("CommonPrefixes", []):
-                yield S3Folder(name=n["Prefix"].removeprefix(self.prefix))
+            for prefx in page.get("CommonPrefixes", []):
+                yield S3Folder(name=prefx["Prefix"].removeprefix(self.prefix))
             for n in page.get("Contents", []):
                 yield S3Entry(
                     name=n["Key"].removeprefix(self.prefix),
@@ -498,7 +525,7 @@ class ZarrEntryResource(DAVNonCollection):
         self.data = data
 
     def get_content(self) -> IO[bytes]:
-        return fsspec.open(self.data.url, mode="rb").open()
+        return fsspec.open(self.data.url, mode="rb").open()  # type: ignore[no-any-return]
 
     def support_ranges(self) -> bool:
         return True
@@ -523,7 +550,9 @@ class ZarrEntryResource(DAVNonCollection):
         return True
 
     def get_last_modified(self) -> float:
-        return self.data.modified.timestamp()
+        dt = self.data.modified
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
 
 class ZarrResource(ZarrFolder):
@@ -537,10 +566,14 @@ class ZarrResource(ZarrFolder):
         return {"type": "Zarr asset"}
 
     def get_creation_date(self) -> float:
-        return self.asset.created.timestamp()
+        dt = self.asset.created
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
     def get_last_modified(self) -> float:
-        return self.asset.modified.timestamp()
+        dt = self.asset.modified
+        assert isinstance(dt, datetime)
+        return dt.timestamp()
 
 
 def main() -> None:

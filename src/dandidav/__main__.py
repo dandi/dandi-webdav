@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import io
 from operator import attrgetter
+import os
 import re
 from typing import IO, TYPE_CHECKING
 from urllib.parse import quote
@@ -406,8 +407,10 @@ class DandisetYaml(DAVNonCollection):
     def support_ranges(self) -> bool:
         return True
 
-    def get_content_length(self) -> None:
-        return None
+    def get_content_length(self) -> int:
+        fp = self.get_content()
+        fp.seek(0, os.SEEK_END)
+        return fp.tell()
 
     def get_content_type(self) -> str:
         return "text/yaml; charset=utf-8"

@@ -1,6 +1,10 @@
 This is a proof-of-concept implementation of a readonly WebDAV interface to
 DANDI Archive.
 
+> [!NOTE]
+> This project has been abandoned in favor of a Rust implementation at
+> <https://github.com/dandi/dandidav>.
+
 Installation
 ============
 `dandidav` requires Python 3.9 or higher.  Just use [pip](https://pip.pypa.io)
